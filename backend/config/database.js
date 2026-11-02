@@ -1,6 +1,11 @@
 const mongoose = require('mongoose');
 const dns = require('dns');
-dns.setServers(['8.8.8.8', '8.8.4.4', '1.1.1.1']);
+
+// Override DNS only in development — fixes ISP/router blocking MongoDB SRV lookups locally.
+// Production servers (Render) have proper DNS and don't need this.
+if (process.env.NODE_ENV !== 'production') {
+  dns.setServers(['8.8.8.8', '8.8.4.4', '1.1.1.1']);
+}
 
 const connectDB = async () => {
   try {
