@@ -2,6 +2,18 @@
 
 A production-ready **Remote MCP (Model Context Protocol) Server** that exposes the existing Student Management System to AI agents like [Devin](https://www.devin.ai/) via a secure HTTP endpoint.
 
+## 📚 Documentation
+
+| Document | Description |
+|----------|-------------|
+| [README.md](./README.md) | This file - Overview and quick start |
+| [AUDIT_REPORT.md](./AUDIT_REPORT.md) | Complete audit findings and compliance checklist |
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | System architecture and data flow diagrams |
+| [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) | Step-by-step Render deployment instructions |
+| [DEVIN_CONNECTION_GUIDE.md](./DEVIN_CONNECTION_GUIDE.md) | Devin CLI configuration and usage |
+| [TESTING_REPORT.md](./TESTING_REPORT.md) | Testing procedures and results |
+| [FINAL_SUMMARY.md](./FINAL_SUMMARY.md) | Project completion summary and checklist |
+
 ## Architecture
 
 ```
@@ -96,40 +108,23 @@ MCP_SERVER_URL=http://localhost:3001 node test.js
 
 ## Deployment on Render
 
-### Step 1 — Push to GitHub
-Make sure the `mcp-server/` folder is committed and pushed to your repository.
+> 📖 **Detailed deployment instructions:** See [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) for step-by-step Render deployment instructions.
 
-### Step 2 — Create a new Web Service on Render
+### Quick Summary
 
-1. Go to [https://dashboard.render.com](https://dashboard.render.com)
-2. Click **New** → **Web Service**
-3. Connect your GitHub repository
+1. **Push to GitHub:** Ensure the `mcp-server/` folder is committed
+2. **Create Web Service:** Go to Render → New → Web Service
+3. **Configure:**
+   - Root Directory: `mcp-server`
+   - Build Command: `npm install`
+   - Start Command: `npm start`
+4. **Environment Variables:**
+   - `BACKEND_API_URL`: `https://student-management-system-iqki.onrender.com`
+   - `MCP_API_KEY`: Generate with `openssl rand -hex 32`
+5. **Deploy:** Click Create Web Service
 
-### Step 3 — Configure the service
+### Verify Deployment
 
-| Setting | Value |
-|---------|-------|
-| **Name** | `student-mcp-server` (or any name) |
-| **Root Directory** | `mcp-server` |
-| **Environment** | `Node` |
-| **Build Command** | `npm install` |
-| **Start Command** | `npm start` |
-| **Instance Type** | Free (or higher for production) |
-
-### Step 4 — Set Environment Variables
-
-In Render's **Environment** tab, add:
-
-| Key | Value |
-|-----|-------|
-| `BACKEND_API_URL` | `https://your-existing-backend.onrender.com` |
-| `MCP_API_KEY` | `<your-strong-random-secret>` |
-
-> ⚠️ **Never commit your `.env` file or the actual `MCP_API_KEY` value to Git.**
-
-### Step 5 — Verify deployment
-
-After deploy completes:
 ```bash
 curl https://YOUR-MCP-SERVICE.onrender.com/health
 ```
@@ -141,7 +136,7 @@ Expected response:
   "service": "student-management-mcp",
   "version": "1.0.0",
   "timestamp": "2025-01-01T00:00:00.000Z",
-  "backend": "https://your-existing-backend.onrender.com"
+  "backend": "https://student-management-system-iqki.onrender.com"
 }
 ```
 
@@ -149,21 +144,30 @@ Expected response:
 
 ## Connecting Devin AI
 
-### In Devin's MCP Settings
+> 📖 **Detailed connection instructions:** See [DEVIN_CONNECTION_GUIDE.md](./DEVIN_CONNECTION_GUIDE.md) for complete Devin CLI configuration instructions.
 
-Go to **Devin → Settings → MCP Servers → Add Custom Server** and enter:
+### Method 1: Command-Line (Recommended)
 
-**Configuration**:
+```bash
+devin mcp add student-management https://YOUR-MCP-SERVICE.onrender.com/mcp --headers "Authorization: Bearer YOUR_MCP_API_KEY"
+```
+
+Replace:
+- `YOUR-MCP-SERVICE.onrender.com` → your actual Render service URL
+- `YOUR_MCP_API_KEY` → the value you set for `MCP_API_KEY` on Render
+
+### Method 2: Configuration File
+
+Create `.devin/mcp_config.local.json` in your project root:
+
 ```json
 {
   "mcpServers": {
     "student-management": {
-      "transport": {
-        "type": "streamable-http",
-        "url": "https://YOUR-MCP-SERVICE.onrender.com/mcp",
-        "headers": {
-          "Authorization": "Bearer YOUR_MCP_API_KEY"
-        }
+      "url": "https://YOUR-MCP-SERVICE.onrender.com/mcp",
+      "transport": "http",
+      "headers": {
+        "Authorization": "Bearer YOUR_MCP_API_KEY"
       }
     }
   }
@@ -171,8 +175,10 @@ Go to **Devin → Settings → MCP Servers → Add Custom Server** and enter:
 ```
 
 Replace:
-- `YOUR-MCP-SERVICE` → your actual Render service subdomain
+- `YOUR-MCP-SERVICE.onrender.com` → your actual Render service URL
 - `YOUR_MCP_API_KEY` → the value you set for `MCP_API_KEY` on Render
+
+**Important:** Use `.devin/mcp_config.local.json` (gitignored) for API keys to avoid committing secrets to Git.
 
 ### Devin can now use natural language like:
 
@@ -243,3 +249,5 @@ The test script:
 - Tests delete confirmation
 - Tests error handling
 - Cleans up the test student at the end
+
+> 📖 **Testing documentation:** See [TESTING_REPORT.md](./TESTING_REPORT.md) for detailed test results and verification steps.

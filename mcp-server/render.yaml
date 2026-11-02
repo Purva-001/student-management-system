@@ -1,0 +1,19 @@
+# Render Deployment Configuration for Student Management MCP Server
+# This file provides explicit deployment instructions for Render.com
+
+services:
+  - type: web
+    name: student-mcp-server
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: BACKEND_API_URL
+        value: https://student-management-system-iqki.onrender.com
+      - key: MCP_API_KEY
+        generateValue: true
+        # Alternatively, set manually in Render dashboard for better control
+      - key: PORT
+        value: 10000
+        # Render injects PORT automatically, but setting a default is safe practice
