@@ -1,26 +1,20 @@
 {
-  "name": "student-mcp-server",
+  "name": "student-management-mcp-server",
   "version": "1.0.0",
-  "description": "Remote MCP Server for Student Management System — exposes CRUD tools for Devin AI via Streamable HTTP transport",
+  "description": "MCP Server for Vercel and Render deployment management",
+  "type": "module",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js"
   },
-  "keywords": [
-    "mcp",
-    "student",
-    "management",
-    "devin",
-    "ai"
-  ],
-  "author": "",
+  "keywords": ["mcp", "vercel", "render", "deployment"],
   "license": "ISC",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.1",
-    "axios": "^1.6.2",
-    "dotenv": "^16.3.1",
-    "express": "^4.18.2",
-    "zod": "^3.24.4"
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "zod": "^3.23.8"
   }
 }
+

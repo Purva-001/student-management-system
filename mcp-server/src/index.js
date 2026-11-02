@@ -1,129 +1,234 @@
-/**
- * index.js — Entry point for the Student Management MCP Server
- *
- * Exposes:
- *   POST /mcp    — MCP Streamable HTTP transport endpoint (bearer-auth protected)
- *   GET  /health — Health check endpoint
- *
- * Environment variables required:
- *   BACKEND_API_URL  — URL of the existing backend (e.g. https://your-app.onrender.com)
- *   MCP_API_KEY      — Secret token used to authenticate MCP clients (Devin, etc.)
- *   PORT             — Port to listen on (injected by Render automatically)
- */
+import 'dotenv/config';
+import express from 'express';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { z } from 'zod';
+import {
+  listProjects, getProject,
+  listDeployments, getDeployment, cancelDeployment
+} from './vercel.js';
+import {
+  listServices, getService,
+  deployService, listDeploys, getDeploy,
+  suspendService, resumeService
+} from './render.js';
 
-'use strict';
+// ─── Validate environment ──────────────────────────────────────────────────
+const HAS_VERCEL = !!process.env.VERCEL_API_TOKEN;
+const HAS_RENDER = !!process.env.RENDER_API_KEY;
 
-require('dotenv').config();
-
-const express = require('express');
-const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
-const authMiddleware = require('./auth.js');
-const { createMcpServer } = require('./mcpServer.js');
-
-// ─── Startup validation ──────────────────────────────────────────────────────
-
-const requiredEnvVars = ['BACKEND_API_URL', 'MCP_API_KEY'];
-const missingVars = requiredEnvVars.filter((v) => !process.env[v]);
-if (missingVars.length > 0) {
-  console.error(`[startup] Missing required environment variables: ${missingVars.join(', ')}`);
-  console.error('[startup] Set these in your .env file or Render environment settings.');
+if (!HAS_VERCEL && !HAS_RENDER) {
+  console.error('[STARTUP] FATAL: Set at least one of VERCEL_API_TOKEN or RENDER_API_KEY in .env');
   process.exit(1);
 }
 
-// ─── Express app setup ───────────────────────────────────────────────────────
+const PORT = parseInt(process.env.MCP_PORT || '3001', 10);
 
+// ─── Create MCP Server ─────────────────────────────────────────────────────
+const server = new McpServer({
+  name: 'student-management-deployment-server',
+  version: '1.0.0',
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  VERCEL TOOLS
+// ═══════════════════════════════════════════════════════════════════
+if (HAS_VERCEL) {
+  server.tool(
+    'vercel_list_projects',
+    'List all Vercel projects in the account',
+    {},
+    async () => {
+      const data = await listProjects();
+      return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    'vercel_get_project',
+    'Get details of a specific Vercel project',
+    { projectId: z.string().describe('Vercel project ID or name') },
+    async ({ projectId }) => {
+      const data = await getProject(projectId);
+      return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    'vercel_list_deployments',
+    'List recent deployments for a Vercel project',
+    {
+      projectId: z.string().describe('Vercel project ID or name'),
+      limit: z.number().optional().describe('Max deployments to return (default: 10)')
+    },
+    async ({ projectId, limit }) => {
+      const data = await listDeployments(projectId, limit);
+      return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    'vercel_get_deployment',
+    'Get details of a specific Vercel deployment',
+    { deploymentId: z.string().describe('Vercel deployment ID or URL') },
+    async ({ deploymentId }) => {
+      const data = await getDeployment(deploymentId);
+      return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    'vercel_cancel_deployment',
+    'Cancel a running Vercel deployment',
+    { deploymentId: z.string().describe('Vercel deployment ID to cancel') },
+    async ({ deploymentId }) => {
+      const data = await cancelDeployment(deploymentId);
+      return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+    }
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  RENDER TOOLS
+// ═══════════════════════════════════════════════════════════════════
+if (HAS_RENDER) {
+  server.tool(
+    'render_list_services',
+    'List all Render services',
+    {
+      type: z.enum(['web_service', 'static_site', 'private_service', 'background_worker', 'cron_job'])
+        .optional()
+        .describe('Filter by service type')
+    },
+    async ({ type }) => {
+      const data = await listServices(type);
+      return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    'render_get_service',
+    'Get details of a specific Render service',
+    { serviceId: z.string().describe('Render service ID (starts with srv-)') },
+    async ({ serviceId }) => {
+      const data = await getService(serviceId);
+      return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    'render_deploy_service',
+    'Trigger a new deploy for a Render service',
+    {
+      serviceId: z.string().describe('Render service ID (starts with srv-)'),
+      clearCache: z.boolean().optional().describe('Clear build cache before deploying (default: false)')
+    },
+    async ({ serviceId, clearCache }) => {
+      const data = await deployService(serviceId, clearCache);
+      return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    'render_list_deploys',
+    'List recent deploys for a Render service',
+    {
+      serviceId: z.string().describe('Render service ID (starts with srv-)'),
+      limit: z.number().optional().describe('Max deploys to return (default: 10)')
+    },
+    async ({ serviceId, limit }) => {
+      const data = await listDeploys(serviceId, limit);
+      return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    'render_get_deploy',
+    'Get details of a specific Render deploy',
+    {
+      serviceId: z.string().describe('Render service ID'),
+      deployId: z.string().describe('Deploy ID')
+    },
+    async ({ serviceId, deployId }) => {
+      const data = await getDeploy(serviceId, deployId);
+      return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    'render_suspend_service',
+    'Suspend a Render service (stops billing for compute)',
+    { serviceId: z.string().describe('Render service ID to suspend') },
+    async ({ serviceId }) => {
+      const data = await suspendService(serviceId);
+      return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    'render_resume_service',
+    'Resume a suspended Render service',
+    { serviceId: z.string().describe('Render service ID to resume') },
+    async ({ serviceId }) => {
+      const data = await resumeService(serviceId);
+      return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+    }
+  );
+}
+
+// ─── Express HTTP server with SSE transport ────────────────────────────────
 const app = express();
 app.use(express.json());
 
-// ─── Health endpoint (no auth required) ─────────────────────────────────────
+const transports = {};
 
-app.get('/health', (req, res) => {
+// SSE endpoint — clients connect here to establish MCP session
+app.get('/mcp', async (req, res) => {
+  const transport = new SSEServerTransport('/mcp/message', res);
+  transports[transport.sessionId] = transport;
+  res.on('close', () => delete transports[transport.sessionId]);
+  await server.connect(transport);
+});
+
+// Message endpoint — clients POST messages here
+app.post('/mcp/message', async (req, res) => {
+  const sessionId = req.query.sessionId;
+  const transport = transports[sessionId];
+  if (!transport) {
+    res.status(404).json({ error: 'Session not found' });
+    return;
+  }
+  await transport.handlePostMessage(req, res);
+});
+
+// Health check
+app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
-    service: 'student-management-mcp',
+    service: 'student-management-mcp-server',
     version: '1.0.0',
-    timestamp: new Date().toISOString(),
-    backend: process.env.BACKEND_API_URL || 'NOT_SET'
+    tools: {
+      vercel: HAS_VERCEL,
+      render: HAS_RENDER
+    },
+    timestamp: new Date().toISOString()
   });
 });
 
-// ─── MCP endpoint (bearer-auth required) ─────────────────────────────────────
-
-app.post('/mcp', authMiddleware, async (req, res) => {
-  let server;
-  let transport;
-
-  try {
-    // Create a fresh MCP server instance for each request (stateless pattern).
-    // This is safe for Render's single-instance deployment and avoids
-    // session management complexity.
-    server = createMcpServer();
-
-    transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined // Stateless — no session IDs needed
-    });
-
-    // Clean up resources when the HTTP connection closes
-    res.on('close', async () => {
-      try {
-        if (transport) await transport.close();
-        if (server) await server.close();
-      } catch (closeErr) {
-        // Ignore close errors — connection is already gone
-      }
-    });
-
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
-  } catch (error) {
-    console.error('[/mcp] Error handling MCP request:', error.message);
-    if (!res.headersSent) {
-      res.status(500).json({
-        error: 'Internal Server Error',
-        message: 'MCP request processing failed'
-      });
-    }
-  }
+// ─── Start ─────────────────────────────────────────────────────────────────
+app.listen(PORT, () => {
+  console.log('');
+  console.log('╔══════════════════════════════════════════════════════════════╗');
+  console.log('║       Student Management MCP Server — v1.0.0                ║');
+  console.log('╠══════════════════════════════════════════════════════════════╣');
+  console.log(`║  MCP Endpoint  : http://localhost:${PORT}/mcp                    ║`);
+  console.log(`║  Health Check  : http://localhost:${PORT}/health                 ║`);
+  console.log(`║  Vercel Tools  : ${HAS_VERCEL ? '✅ Enabled (5 tools) ' : '❌ Disabled            '}             ║`);
+  console.log(`║  Render Tools  : ${HAS_RENDER ? '✅ Enabled (7 tools) ' : '❌ Disabled            '}             ║`);
+  console.log('╚══════════════════════════════════════════════════════════════╝');
+  console.log('');
 });
 
-// ─── 404 handler ─────────────────────────────────────────────────────────────
+process.on('SIGTERM', () => process.exit(0));
+process.on('SIGINT', () => process.exit(0));
 
-app.use((req, res) => {
-  res.status(404).json({
-    error: 'Not Found',
-    message: `Route ${req.method} ${req.path} does not exist on this MCP server`,
-    availableRoutes: ['POST /mcp', 'GET /health']
-  });
-});
-
-// ─── Start server ─────────────────────────────────────────────────────────────
-
-const PORT = process.env.PORT || 3001;
-
-const httpServer = app.listen(PORT, () => {
-  console.log(`[startup] Student Management MCP Server running on port ${PORT}`);
-  console.log(`[startup] Health check: http://localhost:${PORT}/health`);
-  console.log(`[startup] MCP endpoint: http://localhost:${PORT}/mcp`);
-  console.log(`[startup] Backend URL:  ${process.env.BACKEND_API_URL}`);
-});
-
-// ─── Graceful shutdown ────────────────────────────────────────────────────────
-
-const shutdown = (signal) => {
-  console.log(`\n[shutdown] Received ${signal}. Shutting down gracefully...`);
-  httpServer.close(() => {
-    console.log('[shutdown] HTTP server closed. Exiting.');
-    process.exit(0);
-  });
-
-  // Force exit if graceful shutdown takes too long
-  setTimeout(() => {
-    console.error('[shutdown] Force exit after timeout.');
-    process.exit(1);
-  }, 10000);
-};
-
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
-
-module.exports = app; // Exported for testing purposes
